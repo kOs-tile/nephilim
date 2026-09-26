@@ -14,6 +14,7 @@ Responsibilities:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -81,6 +82,86 @@ _UNISWAP_V2_ROUTERS = {
 }
 
 
+def _address_from_abi_word(word: str) -> Optional[str]:
+    if len(word) != 64:
+        return None
+    address = word[-40:].lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", address):
+        return None
+    return "0x" + address
+
+
+def _canonical_pair_key(protocol: str, token_a: str, token_b: str, fee: Optional[int] = None) -> str:
+    a, b = sorted((token_a.lower(), token_b.lower()))
+    return f"{protocol}:{a}:{b}" + (f":{fee}" if fee is not None else "")
+
+
+def _decode_v3_exact_input_single_pair(input_data: str) -> Optional[str]:
+    """Decode tokenIn/tokenOut/fee from Uniswap V3 exactInputSingle calldata."""
+    if not input_data.startswith(_UNI_V3_EXACT_INPUT) or len(input_data) < 10 + 64 * 3:
+        return None
+    payload = input_data[10:]
+    words = [payload[i:i + 64] for i in range(0, len(payload), 64)]
+    if len(words) < 3:
+        return None
+    token_in = _address_from_abi_word(words[0])
+    token_out = _address_from_abi_word(words[1])
+    if not token_in or not token_out or token_in == token_out:
+        return None
+    try:
+        fee = int(words[2], 16)
+    except ValueError:
+        return None
+    return _canonical_pair_key("uniswap_v3", token_in, token_out, fee)
+
+
+_V2_PATH_OFFSET_WORD = {
+    _UNI_V2_SWAP_ETH_FOR_TOKENS: 1,
+    _UNI_V2_SWAP_EXACT_ETH: 1,
+    _UNI_V2_SWAP_TOKENS_FOR_ETH: 2,
+    _UNI_V2_SWAP_TOKENS_FOR_TOKENS: 2,
+}
+
+
+def _decode_v2_path_pair(input_data: str, selector: str) -> Optional[str]:
+    """Decode the first/last token of a Uniswap V2 router path."""
+    offset_index = _V2_PATH_OFFSET_WORD.get(selector)
+    if offset_index is None or not input_data.startswith(selector):
+        return None
+    payload = input_data[10:]
+    words = [payload[i:i + 64] for i in range(0, len(payload), 64)]
+    if len(words) <= offset_index:
+        return None
+    try:
+        offset_bytes = int(words[offset_index], 16)
+    except ValueError:
+        return None
+    if offset_bytes % 32 != 0:
+        return None
+    path_index = offset_bytes // 32
+    if path_index >= len(words):
+        return None
+    try:
+        path_len = int(words[path_index], 16)
+    except ValueError:
+        return None
+    if path_len < 2 or path_index + path_len >= len(words):
+        return None
+    token_in = _address_from_abi_word(words[path_index + 1])
+    token_out = _address_from_abi_word(words[path_index + path_len])
+    if not token_in or not token_out or token_in == token_out:
+        return None
+    return _canonical_pair_key("uniswap_v2", token_in, token_out)
+
+
+def _decode_dex_pair_key(input_data: str, selector: str) -> Optional[str]:
+    if selector == _UNI_V3_EXACT_INPUT:
+        return _decode_v3_exact_input_single_pair(input_data)
+    if selector in _V2_PATH_OFFSET_WORD:
+        return _decode_v2_path_pair(input_data, selector)
+    return None
+
+
 @dataclass
 class TxRecord:
     """Fully decoded transaction with feature-engineered fields for the ML classifier."""
@@ -105,6 +186,7 @@ class TxRecord:
     is_lp_remove: bool = False
     involves_uniswap_v3: bool = False
     involves_uniswap_v2: bool = False
+    dex_pair_key: Optional[str] = None
 
     # MEV feature signals
     involves_flashloan: bool = False
@@ -214,6 +296,7 @@ class TransactionDecoder:
         is_governance = method_selector in _GOVERNANCE_SELECTORS
         involves_uniswap_v3 = to_addr in _UNISWAP_V3_ROUTERS
         involves_uniswap_v2 = to_addr in _UNISWAP_V2_ROUTERS
+        dex_pair_key = _decode_dex_pair_key(input_data, method_selector)
 
         return TxRecord(
             hash=tx_hash,
@@ -233,6 +316,7 @@ class TransactionDecoder:
             is_lp_remove=is_lp_remove,
             involves_uniswap_v3=involves_uniswap_v3,
             involves_uniswap_v2=involves_uniswap_v2,
+            dex_pair_key=dex_pair_key,
             involves_flashloan=involves_flashloan,
             touches_price_oracle=touches_price_oracle,
             is_governance=is_governance,
