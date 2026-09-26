@@ -37,6 +37,7 @@ def make_tx(
     to_addr: str = UNISWAP_V3,
     block: int = 19_000_000,
     all_gas_prices: List[int] | None = None,
+    pair_key: str | None = "uniswap_v3:0x1111111111111111111111111111111111111111:0x2222222222222222222222222222222222222222:3000",
 ) -> TxRecord:
     gas_wei = int(gas_gwei * 1e9)
     prices = all_gas_prices or [gas_wei]
@@ -56,6 +57,7 @@ def make_tx(
         input_data="0x414bf389" + "00" * 32,
         method_selector="0x414bf389",
         is_swap=True,
+        dex_pair_key=pair_key,
         gas_price_percentile=percentile,
         block_base_fee_wei=BASE_FEE,
         gas_premium_multiplier=gas_wei / BASE_FEE,
@@ -123,6 +125,25 @@ class TestSandwichDetector:
         results = self.detector.detect(txs)
         assert len(results) == 0
 
+    def test_same_router_different_pairs_do_not_false_positive(self) -> None:
+        """Unrelated swaps through one router must not be grouped as one pair."""
+        prices = self._block_prices(45, 20, 45)
+        txs = [
+            make_tx("0xfront", 0, BOT_A, 45.0, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
+            make_tx("0xvictim", 1, VICTIM, 20.0, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:3000"),
+            make_tx("0xback", 2, BOT_A, 45.0, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
+        ]
+        assert self.detector.detect(txs) == []
+
+    def test_undecoded_pair_fails_closed(self) -> None:
+        prices = self._block_prices(45, 20, 45)
+        txs = [
+            make_tx("0xfront", 0, BOT_A, 45.0, all_gas_prices=prices, pair_key=None),
+            make_tx("0xvictim", 1, VICTIM, 20.0, all_gas_prices=prices, pair_key=None),
+            make_tx("0xback", 2, BOT_A, 45.0, all_gas_prices=prices, pair_key=None),
+        ]
+        assert self.detector.detect(txs) == []
+
     def test_no_detection_wrong_backrun_address(self) -> None:
         """Backrun from a different address than frontrun is not a sandwich."""
         prices = self._block_prices(45, 20, 45)
@@ -142,13 +163,13 @@ class TestSandwichDetector:
 
         txs = [
             # Sandwich 1 on pool_a by BOT_A
-            make_tx("0xf1", 0, BOT_A, 50.0, to_addr=pool_a, all_gas_prices=prices),
-            make_tx("0xv1", 1, VICTIM, 20.0, to_addr=pool_a, all_gas_prices=prices),
-            make_tx("0xb1", 2, BOT_A, 50.0, to_addr=pool_a, all_gas_prices=prices),
+            make_tx("0xf1", 0, BOT_A, 50.0, to_addr=pool_a, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
+            make_tx("0xv1", 1, VICTIM, 20.0, to_addr=pool_a, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
+            make_tx("0xb1", 2, BOT_A, 50.0, to_addr=pool_a, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
             # Sandwich 2 on pool_b by BOT_B
-            make_tx("0xf2", 3, BOT_B, 50.0, to_addr=pool_b, all_gas_prices=prices),
-            make_tx("0xv2", 4, VICTIM, 20.0, to_addr=pool_b, all_gas_prices=prices),
-            make_tx("0xb2", 5, BOT_B, 50.0, to_addr=pool_b, all_gas_prices=prices),
+            make_tx("0xf2", 3, BOT_B, 50.0, to_addr=pool_b, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:500"),
+            make_tx("0xv2", 4, VICTIM, 20.0, to_addr=pool_b, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:500"),
+            make_tx("0xb2", 5, BOT_B, 50.0, to_addr=pool_b, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:500"),
         ]
         results = self.detector.detect(txs)
         assert len(results) == 2
