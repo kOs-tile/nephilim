@@ -44,3 +44,38 @@ def test_decode_v2_path_pair():
     )
     key = _decode_v2_path_pair(calldata, _UNI_V2_SWAP_ETH_FOR_TOKENS)
     assert key == f"uniswap_v2:{token_a}:{token_b}"
+
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+
+from nephilim.stream.transaction_decoder import TransactionDecoder
+
+
+@pytest.mark.asyncio
+async def test_eth_price_missing_is_unavailable():
+    decoder = TransactionDecoder(w3=MagicMock(), redis_url="redis://unused")
+    redis = AsyncMock()
+    redis.get = AsyncMock(return_value=None)
+    decoder._get_redis = AsyncMock(return_value=redis)
+
+    price, provenance = await decoder.get_eth_price_usd()
+
+    assert price == 0.0
+    assert provenance == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_eth_price_cache_is_marked_cached_after_source_failure():
+    decoder = TransactionDecoder(w3=MagicMock(), redis_url="redis://unused")
+    redis = AsyncMock()
+    redis.get = AsyncMock(side_effect=["4200.5", RuntimeError("redis down")])
+    decoder._get_redis = AsyncMock(return_value=redis)
+
+    first_price, first_provenance = await decoder.get_eth_price_usd()
+    cached_price, cached_provenance = await decoder.get_eth_price_usd()
+
+    assert first_price == 4200.5
+    assert first_provenance == "real"
+    assert cached_price == 4200.5
+    assert cached_provenance == "cached"
