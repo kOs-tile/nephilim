@@ -96,7 +96,9 @@ def _canonical_pair_key(protocol: str, token_a: str, token_b: str, fee: Optional
     return f"{protocol}:{a}:{b}" + (f":{fee}" if fee is not None else "")
 
 
-def _decode_v3_exact_input_single_pair(input_data: str) -> Optional[str]:
+def _decode_v3_exact_input_single_details(
+    input_data: str,
+) -> Optional[Tuple[str, str, int]]:
     """Decode tokenIn/tokenOut/fee from Uniswap V3 exactInputSingle calldata."""
     if not input_data.startswith(_UNI_V3_EXACT_INPUT) or len(input_data) < 10 + 64 * 3:
         return None
@@ -112,6 +114,14 @@ def _decode_v3_exact_input_single_pair(input_data: str) -> Optional[str]:
         fee = int(words[2], 16)
     except ValueError:
         return None
+    return token_in, token_out, fee
+
+
+def _decode_v3_exact_input_single_pair(input_data: str) -> Optional[str]:
+    details = _decode_v3_exact_input_single_details(input_data)
+    if details is None:
+        return None
+    token_in, token_out, fee = details
     return _canonical_pair_key("uniswap_v3", token_in, token_out, fee)
 
 
@@ -123,8 +133,11 @@ _V2_PATH_OFFSET_WORD = {
 }
 
 
-def _decode_v2_path_pair(input_data: str, selector: str) -> Optional[str]:
-    """Decode the first/last token of a Uniswap V2 router path."""
+def _decode_v2_path_tokens(
+    input_data: str,
+    selector: str,
+) -> Optional[Tuple[str, str]]:
+    """Decode first/last token direction from a Uniswap V2 router path."""
     offset_index = _V2_PATH_OFFSET_WORD.get(selector)
     if offset_index is None or not input_data.startswith(selector):
         return None
@@ -151,6 +164,14 @@ def _decode_v2_path_pair(input_data: str, selector: str) -> Optional[str]:
     token_out = _address_from_abi_word(words[path_index + path_len])
     if not token_in or not token_out or token_in == token_out:
         return None
+    return token_in, token_out
+
+
+def _decode_v2_path_pair(input_data: str, selector: str) -> Optional[str]:
+    tokens = _decode_v2_path_tokens(input_data, selector)
+    if tokens is None:
+        return None
+    token_in, token_out = tokens
     return _canonical_pair_key("uniswap_v2", token_in, token_out)
 
 
@@ -159,6 +180,22 @@ def _decode_dex_pair_key(input_data: str, selector: str) -> Optional[str]:
         return _decode_v3_exact_input_single_pair(input_data)
     if selector in _V2_PATH_OFFSET_WORD:
         return _decode_v2_path_pair(input_data, selector)
+    return None
+
+
+def _decode_dex_token_direction(
+    input_data: str,
+    selector: str,
+) -> Optional[Tuple[str, str]]:
+    """Decode swap token direction for supported calldata or fail closed."""
+    if selector == _UNI_V3_EXACT_INPUT:
+        details = _decode_v3_exact_input_single_details(input_data)
+        if details is None:
+            return None
+        token_in, token_out, _fee = details
+        return token_in, token_out
+    if selector in _V2_PATH_OFFSET_WORD:
+        return _decode_v2_path_tokens(input_data, selector)
     return None
 
 
@@ -187,6 +224,8 @@ class TxRecord:
     involves_uniswap_v3: bool = False
     involves_uniswap_v2: bool = False
     dex_pair_key: Optional[str] = None
+    dex_token_in: Optional[str] = None
+    dex_token_out: Optional[str] = None
     eth_price_provenance: str = "unavailable"  # real | cached | unavailable
 
     # MEV feature signals
@@ -303,6 +342,9 @@ class TransactionDecoder:
         involves_uniswap_v3 = to_addr in _UNISWAP_V3_ROUTERS
         involves_uniswap_v2 = to_addr in _UNISWAP_V2_ROUTERS
         dex_pair_key = _decode_dex_pair_key(input_data, method_selector)
+        dex_direction = _decode_dex_token_direction(input_data, method_selector)
+        dex_token_in = dex_direction[0] if dex_direction else None
+        dex_token_out = dex_direction[1] if dex_direction else None
 
         return TxRecord(
             hash=tx_hash,
@@ -323,6 +365,8 @@ class TransactionDecoder:
             involves_uniswap_v3=involves_uniswap_v3,
             involves_uniswap_v2=involves_uniswap_v2,
             dex_pair_key=dex_pair_key,
+            dex_token_in=dex_token_in,
+            dex_token_out=dex_token_out,
             eth_price_provenance=eth_price_provenance,
             involves_flashloan=involves_flashloan,
             touches_price_oracle=touches_price_oracle,
