@@ -56,6 +56,8 @@ UNISWAP_V3 = "0xe592427a0aece92de3edee1f18e0157c05861564"
 AAVE_POOL = "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9"
 
 _BASE_FEE = int(20e9)  # 20 gwei
+TOKEN_A = "0x1111111111111111111111111111111111111111"
+TOKEN_B = "0x2222222222222222222222222222222222222222"
 
 
 def _make_tx(
@@ -75,6 +77,7 @@ def _make_tx(
     touches_oracle: bool = False,
     is_governance: bool = False,
     block_gas_prices: List[int] | None = None,
+    reverse_direction: bool = False,
 ) -> TxRecord:
     gas_price_wei = int(gas_price_gwei * 1e9)
     all_prices = block_gas_prices or [gas_price_wei]
@@ -100,6 +103,16 @@ def _make_tx(
         is_lp_add=is_lp_add,
         is_lp_remove=is_lp_remove,
         involves_uniswap_v3=to_addr == UNISWAP_V3,
+        dex_pair_key=(
+            f"uniswap_v3:{TOKEN_A}:{TOKEN_B}:3000"
+            if is_swap else None
+        ),
+        dex_token_in=(
+            TOKEN_B if reverse_direction else TOKEN_A
+        ) if is_swap else None,
+        dex_token_out=(
+            TOKEN_A if reverse_direction else TOKEN_B
+        ) if is_swap else None,
         involves_flashloan=involves_flashloan,
         touches_price_oracle=touches_oracle,
         is_governance=is_governance,
@@ -121,7 +134,7 @@ def build_demo_blocks() -> List[Dict[str, Any]]:
         _make_tx("0xvictim01", 19_462_101, 4, VICTIM_1, UNISWAP_V3, 20.0, 21.0,
                  block_gas_prices=prices_b1),
         _make_tx("0xback001", 19_462_101, 5, BOT_A, UNISWAP_V3, 5.0, 44.0,
-                 block_gas_prices=prices_b1),
+                 block_gas_prices=prices_b1, reverse_direction=True),
         # Organic background txs
         _make_tx("0xorganic1", 19_462_101, 10, VICTIM_2, UNISWAP_V3, 0.5, 18.0,
                  block_gas_prices=prices_b1),
