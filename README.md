@@ -11,25 +11,25 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![GraphQL](https://img.shields.io/badge/GraphQL-Strawberry-E10098?style=flat-square&logo=graphql&logoColor=white)](https://strawberry.rocks)
 
-> **Real-time on-chain entity intelligence and MEV attribution engine for Ethereum and Arbitrum.**
+> **Evidence-first on-chain MEV detection and entity-research lab for Ethereum-compatible chains.**
 
 ---
 
 ## The On-Chain Opacity Problem
 
-Every day, hundreds of millions of dollars move through Ethereum and Arbitrum — extracted silently by bots, routed through obfuscated wallet clusters, and attributed to nothing. Existing tools like Nansen and Arkham offer labelled entity data, but they are **closed, expensive, and lag hours behind**. Builders and researchers have no open, composable primitive to answer:
+On-chain activity is observable, but reliable attribution is harder than transaction decoding. A useful research system needs explicit evidence boundaries, reproducible detector behavior, and measurable false-positive/false-negative rates. NEPHILIM explores those primitives for questions such as:
 
 - *Who just sandwiched a user on Uniswap V3?*
 - *Is this new wallet cluster the same MEV bot that drained $3M from protocol X last week?*
 - *Which addresses are acting as de-facto market makers for this token launch?*
 
-**NEPHILIM** is the answer. It ingests live Ethereum/Arbitrum block data, classifies every transaction across 12 MEV categories using a trained XGBoost model, detects sandwich and JIT attacks at block-level granularity, clusters wallets into named entities via Louvain community detection, and stores the resulting entity graph in Neo4j — all in real time, fully open source, with a GraphQL API you can query from anywhere.
+NEPHILIM contains a live-ingestion architecture, deterministic pattern detectors, a synthetic-data ML classifier experiment, graph clustering, storage adapters, and a GraphQL surface. The deterministic detectors are the current validation focus. The ML classifier is not presented as production-validated attribution until it is benchmarked on independently labeled historical chain data.
 
 ---
 
 ## Detector evidence boundary
 
-The sandwich detector no longer groups swaps by router address. For supported calldata it derives a canonical DEX pair key from token addresses (and V3 fee tier); unsupported swaps remain unclassified instead of being forced into a router-level pair. Reported extracted value remains an explicit heuristic estimate until trace-level profit reconstruction is implemented.
+The sandwich detector no longer groups swaps by router address. For supported calldata it derives a canonical DEX pair key and preserves token direction. A detection now requires: front-run and victim on the same decoded pair and direction, a backrun in the exact reverse direction, the same attacker on front/back, and the configured gas-ordering evidence. Missing pair or direction evidence fails closed. Reported extracted value remains an explicit heuristic estimate until trace-level profit reconstruction is implemented.
 
 ## Architecture
 
@@ -85,7 +85,7 @@ The sandwich detector no longer groups swaps by router address. For supported ca
 
 ## MEV Type Classification
 
-NEPHILIM classifies every transaction into one of **12 MEV categories** using a combination of rule-based heuristics and a trained XGBoost model:
+NEPHILIM's research taxonomy contains **12 MEV categories**. The rule-based detectors cover a narrower subset; the XGBoost path is trained on synthetic labels and should be treated as an experiment rather than a validated classifier:
 
 | # | Type | Description | Key Signal |
 |---|------|-------------|------------|
@@ -104,20 +104,28 @@ NEPHILIM classifies every transaction into one of **12 MEV categories** using a 
 
 ---
 
-## Comparison: NEPHILIM vs Nansen vs Arkham
+## Detector benchmark discipline
 
-| Feature | **NEPHILIM** | Nansen | Arkham |
-|---------|-------------|--------|--------|
-| Open source | ✅ MIT | ❌ Closed | ❌ Closed |
-| Real-time (< 1 block lag) | ✅ | ❌ Hours | ❌ Hours |
-| MEV attribution | ✅ 12 types | Partial | Partial |
-| Wallet clustering algorithm | ✅ Louvain exposed | Proprietary | Proprietary |
-| GraphQL API | ✅ Self-hosted | ❌ REST only | ❌ REST only |
-| Arbitrum support | ✅ | ✅ (paid) | ✅ (paid) |
-| Self-hostable | ✅ Docker Compose | ❌ | ❌ |
-| Entity graph queryable | ✅ Neo4j | ❌ | ❌ |
-| Cost | Free | $150+/mo | $150+/mo |
-| Labeling transparency | ✅ Full pipeline | ❌ Black box | ❌ Black box |
+NEPHILIM includes a deterministic benchmark harness for labeled sandwich-detector cases:
+
+```bash
+pytest tests/test_sandwich_benchmark.py -q
+```
+
+The harness reports case-level TP / FP / TN / FN, precision, recall, false-positive rate, and accuracy. The repository currently uses synthetic/adversarial fixtures for regression: canonical sandwich, same-direction attacker traffic, missing direction evidence, equal-gas ordering, wrong-pair traffic, and wrong backrun sender.
+
+A perfect score on this small synthetic corpus is **not** a production accuracy claim. The next validation gate is a versioned historical-chain corpus with independently checked labels, decoded traces, unsupported-router cases, and ambiguous multi-swap transactions.
+
+### Current validation boundary
+
+| Component | Current evidence | Missing before stronger claims |
+|---|---|---|
+| Pair decoding | Unit-tested V2 path + V3 exactInputSingle | More routers/selectors and trace reconciliation |
+| Sandwich detector | Adversarial deterministic fixtures | Historical labeled corpus |
+| Extracted value | Explicit heuristic estimate | Trace-level realized-profit reconstruction |
+| ETH/USD enrichment | REAL/CACHED/UNAVAILABLE provenance | Dedicated source-quality/freshness policy |
+| ML 12-class classifier | Synthetic training data | Real labeled dataset + held-out benchmark |
+| Entity clustering | Reproducible graph algorithm | Ground-truth identity evaluation |
 
 ---
 
