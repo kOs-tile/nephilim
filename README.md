@@ -340,3 +340,8 @@ GitHub: [@onurkavi](https://github.com/kOs-tile)
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+
+## Validation gate
+
+The benchmark progression from adversarial fixtures to an independently labeled historical-chain corpus and trace-level economics is specified in [`docs/VALIDATION.md`](docs/VALIDATION.md).
