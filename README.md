@@ -1,5 +1,8 @@
 # NEPHILIM
 
+> **Status — Legacy research prototype.** NEPHILIM demonstrates an MEV/entity-intelligence pipeline. Its ML classifier is trained on synthetic labeled data and its heuristic detectors are **not validated trading signals**. Treat outputs as research artifacts until benchmarked against real labeled chain traces.
+
+
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Web3.py](https://img.shields.io/badge/Web3.py-6.x-F16822?style=flat-square&logo=ethereum&logoColor=white)](https://web3py.readthedocs.io)
 [![Neo4j](https://img.shields.io/badge/Neo4j-5.x-008CC1?style=flat-square&logo=neo4j&logoColor=white)](https://neo4j.com)
@@ -125,7 +128,7 @@ NEPHILIM classifies every transaction into one of **12 MEV categories** using a 
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/onurkavi/nephilim.git
+git clone https://github.com/kOs-tile/nephilim.git
 cd nephilim
 cp .env.example .env
 # Edit .env with your API keys
