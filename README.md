@@ -1,6 +1,6 @@
 # NEPHILIM
 
-> **Status — Legacy research prototype.** NEPHILIM demonstrates an MEV/entity-intelligence pipeline. Its ML classifier is trained on synthetic labeled data and its heuristic detectors are **not validated trading signals**. Treat outputs as research artifacts until benchmarked against real labeled chain traces.
+> **Status — Research-active on-chain detection lab.** NEPHILIM is being narrowed toward evidence-first MEV pattern detection. Its ML classifier remains synthetic-data research and is **not a validated trading signal**. Deterministic detectors are being hardened to fail closed when pair/trace evidence is missing.
 
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
@@ -26,6 +26,10 @@ Every day, hundreds of millions of dollars move through Ethereum and Arbitrum �
 **NEPHILIM** is the answer. It ingests live Ethereum/Arbitrum block data, classifies every transaction across 12 MEV categories using a trained XGBoost model, detects sandwich and JIT attacks at block-level granularity, clusters wallets into named entities via Louvain community detection, and stores the resulting entity graph in Neo4j — all in real time, fully open source, with a GraphQL API you can query from anywhere.
 
 ---
+
+## Detector evidence boundary
+
+The sandwich detector no longer groups swaps by router address. For supported calldata it derives a canonical DEX pair key from token addresses (and V3 fee tier); unsupported swaps remain unclassified instead of being forced into a router-level pair. Reported extracted value remains an explicit heuristic estimate until trace-level profit reconstruction is implemented.
 
 ## Architecture
 
