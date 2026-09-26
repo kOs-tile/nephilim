@@ -187,6 +187,7 @@ class TxRecord:
     involves_uniswap_v3: bool = False
     involves_uniswap_v2: bool = False
     dex_pair_key: Optional[str] = None
+    eth_price_provenance: str = "unavailable"  # real | cached | unavailable
 
     # MEV feature signals
     involves_flashloan: bool = False
@@ -235,15 +236,20 @@ class TransactionDecoder:
             )
         return self._redis
 
-    async def get_eth_price_usd(self) -> float:
+    async def get_eth_price_usd(self) -> tuple[float, str]:
+        """Return ETH/USD with explicit provenance; never invent a market price."""
         try:
             r = await self._get_redis()
             raw = await r.get(self._ETH_USD_KEY)
             if raw:
                 self._eth_price_cache = float(raw)
+                return self._eth_price_cache, "real"
         except Exception:  # noqa: BLE001
             pass
-        return self._eth_price_cache if self._eth_price_cache else 3500.0  # fallback
+
+        if self._eth_price_cache:
+            return self._eth_price_cache, "cached"
+        return 0.0, "unavailable"
 
     async def decode(
         self,
@@ -267,8 +273,8 @@ class TransactionDecoder:
 
         value_wei = int(raw_tx.get("value", 0))
         value_eth = value_wei / 1e18
-        eth_price = await self.get_eth_price_usd()
-        value_usd = value_eth * eth_price
+        eth_price, eth_price_provenance = await self.get_eth_price_usd()
+        value_usd = value_eth * eth_price if eth_price > 0 else 0.0
 
         gas_price_wei = int(raw_tx.get("gasPrice", 0))
         gas_used = int(raw_tx.get("gas", 0))
@@ -317,6 +323,7 @@ class TransactionDecoder:
             involves_uniswap_v3=involves_uniswap_v3,
             involves_uniswap_v2=involves_uniswap_v2,
             dex_pair_key=dex_pair_key,
+            eth_price_provenance=eth_price_provenance,
             involves_flashloan=involves_flashloan,
             touches_price_oracle=touches_price_oracle,
             is_governance=is_governance,
