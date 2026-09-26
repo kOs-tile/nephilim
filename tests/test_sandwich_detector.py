@@ -26,6 +26,8 @@ BOT_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 BOT_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 VICTIM = "0x1111111111111111111111111111111111111111"
 BASE_FEE = int(20e9)
+TOKEN_A = "0x1111111111111111111111111111111111111111"
+TOKEN_B = "0x2222222222222222222222222222222222222222"
 
 
 def make_tx(
@@ -38,6 +40,7 @@ def make_tx(
     block: int = 19_000_000,
     all_gas_prices: List[int] | None = None,
     pair_key: str | None = "uniswap_v3:0x1111111111111111111111111111111111111111:0x2222222222222222222222222222222222222222:3000",
+    reverse_direction: bool = False,
 ) -> TxRecord:
     gas_wei = int(gas_gwei * 1e9)
     prices = all_gas_prices or [gas_wei]
@@ -58,6 +61,8 @@ def make_tx(
         method_selector="0x414bf389",
         is_swap=True,
         dex_pair_key=pair_key,
+        dex_token_in=TOKEN_B if reverse_direction else TOKEN_A,
+        dex_token_out=TOKEN_A if reverse_direction else TOKEN_B,
         gas_price_percentile=percentile,
         block_base_fee_wei=BASE_FEE,
         gas_premium_multiplier=gas_wei / BASE_FEE,
@@ -77,7 +82,7 @@ class TestSandwichDetector:
         txs = [
             make_tx("0xfront", 0, BOT_A, 40.0, all_gas_prices=prices),
             make_tx("0xvictim", 1, VICTIM, 20.0, all_gas_prices=prices),
-            make_tx("0xback", 2, BOT_A, 40.0, all_gas_prices=prices),
+            make_tx("0xback", 2, BOT_A, 40.0, all_gas_prices=prices, reverse_direction=True),
         ]
         results = self.detector.detect(txs)
         assert len(results) == 1
@@ -94,7 +99,7 @@ class TestSandwichDetector:
         txs = [
             make_tx("0xfront", 0, BOT_A, 50.0, value_eth=0.01, all_gas_prices=prices),
             make_tx("0xvictim", 1, VICTIM, 20.0, value_eth=0.01, all_gas_prices=prices),
-            make_tx("0xback", 2, BOT_A, 50.0, value_eth=0.01, all_gas_prices=prices),
+            make_tx("0xback", 2, BOT_A, 50.0, value_eth=0.01, all_gas_prices=prices, reverse_direction=True),
         ]
         results = self.detector.detect(txs)
         if results:
@@ -109,7 +114,7 @@ class TestSandwichDetector:
         txs = [
             make_tx("0xfront", 0, BOT_A, 20.0, all_gas_prices=prices),
             make_tx("0xvictim", 1, VICTIM, 20.0, all_gas_prices=prices),
-            make_tx("0xback", 2, BOT_A, 20.0, all_gas_prices=prices),
+            make_tx("0xback", 2, BOT_A, 20.0, all_gas_prices=prices, reverse_direction=True),
         ]
         results = self.detector.detect(txs)
         assert len(results) == 0
@@ -120,7 +125,7 @@ class TestSandwichDetector:
         txs = [
             make_tx("0xfront", 0, BOT_A, 45.0, all_gas_prices=prices),
             make_tx("0xvictim", 1, BOT_A, 20.0, all_gas_prices=prices),  # same
-            make_tx("0xback", 2, BOT_A, 45.0, all_gas_prices=prices),
+            make_tx("0xback", 2, BOT_A, 45.0, all_gas_prices=prices, reverse_direction=True),
         ]
         results = self.detector.detect(txs)
         assert len(results) == 0
@@ -150,7 +155,7 @@ class TestSandwichDetector:
         txs = [
             make_tx("0xfront", 0, BOT_A, 45.0, all_gas_prices=prices),
             make_tx("0xvictim", 1, VICTIM, 20.0, all_gas_prices=prices),
-            make_tx("0xback", 2, BOT_B, 45.0, all_gas_prices=prices),  # different bot
+            make_tx("0xback", 2, BOT_B, 45.0, all_gas_prices=prices, reverse_direction=True),  # different bot
         ]
         results = self.detector.detect(txs)
         assert len(results) == 0
@@ -165,11 +170,11 @@ class TestSandwichDetector:
             # Sandwich 1 on pool_a by BOT_A
             make_tx("0xf1", 0, BOT_A, 50.0, to_addr=pool_a, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
             make_tx("0xv1", 1, VICTIM, 20.0, to_addr=pool_a, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
-            make_tx("0xb1", 2, BOT_A, 50.0, to_addr=pool_a, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000"),
+            make_tx("0xb1", 2, BOT_A, 50.0, to_addr=pool_a, all_gas_prices=prices, pair_key="uniswap_v3:tokena:tokenb:3000", reverse_direction=True),
             # Sandwich 2 on pool_b by BOT_B
             make_tx("0xf2", 3, BOT_B, 50.0, to_addr=pool_b, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:500"),
             make_tx("0xv2", 4, VICTIM, 20.0, to_addr=pool_b, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:500"),
-            make_tx("0xb2", 5, BOT_B, 50.0, to_addr=pool_b, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:500"),
+            make_tx("0xb2", 5, BOT_B, 50.0, to_addr=pool_b, all_gas_prices=prices, pair_key="uniswap_v3:tokenc:tokend:500", reverse_direction=True),
         ]
         results = self.detector.detect(txs)
         assert len(results) == 2
@@ -182,7 +187,7 @@ class TestSandwichDetector:
         prices = self._block_prices(45, 20, 45)
         front = make_tx("0xfront", 0, BOT_A, 45.0, all_gas_prices=prices)
         victim = make_tx("0xvictim", 1, VICTIM, 20.0, all_gas_prices=prices)
-        back = make_tx("0xback", 2, BOT_A, 45.0, all_gas_prices=prices)
+        back = make_tx("0xback", 2, BOT_A, 45.0, all_gas_prices=prices, reverse_direction=True)
 
         results = self.detector.detect([front, victim, back])
         assert len(results) == 1
@@ -201,3 +206,33 @@ class TestSandwichDetector:
             make_tx("0xv", 1, VICTIM, 20.0, all_gas_prices=prices),
         ]
         assert self.detector.detect(txs) == []
+
+
+
+def test_same_direction_backrun_fails_closed():
+    detector = SandwichDetector()
+    prices = [int(g * 1e9) for g in (45, 20, 45)]
+    txs = [
+        make_tx("0xfront-direction", 0, BOT_A, 45.0, all_gas_prices=prices),
+        make_tx("0xvictim-direction", 1, VICTIM, 20.0, all_gas_prices=prices),
+        make_tx("0xback-direction", 2, BOT_A, 45.0, all_gas_prices=prices),
+    ]
+    assert detector.detect(txs) == []
+
+
+def test_missing_direction_evidence_fails_closed():
+    detector = SandwichDetector()
+    prices = [int(g * 1e9) for g in (45, 20, 45)]
+    front = make_tx("0xfront-missing", 0, BOT_A, 45.0, all_gas_prices=prices)
+    victim = make_tx("0xvictim-missing", 1, VICTIM, 20.0, all_gas_prices=prices)
+    back = make_tx(
+        "0xback-missing",
+        2,
+        BOT_A,
+        45.0,
+        all_gas_prices=prices,
+        reverse_direction=True,
+    )
+    victim.dex_token_in = None
+    victim.dex_token_out = None
+    assert detector.detect([front, victim, back]) == []
