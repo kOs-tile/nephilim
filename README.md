@@ -104,6 +104,25 @@ NEPHILIM's research taxonomy contains **12 MEV categories**. The rule-based dete
 
 ---
 
+## Detector evidence artifacts
+
+NEPHILIM can seal sandwich-detector output into a deterministic
+`nephilim.detector-evidence.v0` artifact. The artifact binds:
+
+- chain + block number
+- a canonical fingerprint of the exact detector-relevant transactions
+- the detector contract used
+- canonical detector events
+- explicit research/non-authority semantics
+- a SHA-256 `report_fingerprint`
+
+`build_sandwich_evidence(...)` sets both `validated_trading_signal=false` and
+`authorizes_action=false`. A detector finding may inform research, review, or
+an approval workflow; it cannot authorize a transaction.
+
+The resulting `report_fingerprint` is suitable for the KAVI execution-evidence
+envelope alongside ORACLE, MNEMOS, SPECTRAFLOW, and PHANTOM artifacts.
+
 ## Detector benchmark discipline
 
 NEPHILIM includes a deterministic benchmark harness for labeled sandwich-detector cases:
