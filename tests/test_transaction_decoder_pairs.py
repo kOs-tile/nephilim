@@ -1,4 +1,5 @@
 from nephilim.stream.transaction_decoder import (
+    _decode_dex_token_direction,
     _decode_v2_path_pair,
     _decode_v3_exact_input_single_pair,
     _UNI_V2_SWAP_ETH_FOR_TOKENS,
@@ -25,7 +26,9 @@ def test_decode_v3_exact_input_single_pair():
         + _word_int(0) * 4
     )
     key = _decode_v3_exact_input_single_pair(calldata)
+    direction = _decode_dex_token_direction(calldata, "0x414bf389")
     assert key == f"uniswap_v3:{token_a}:{token_b}:3000"
+    assert direction == (token_a, token_b)
 
 
 def test_decode_v2_path_pair():
@@ -43,7 +46,11 @@ def test_decode_v2_path_pair():
         + _word_address(token_b)
     )
     key = _decode_v2_path_pair(calldata, _UNI_V2_SWAP_ETH_FOR_TOKENS)
+    direction = _decode_dex_token_direction(
+        calldata, _UNI_V2_SWAP_ETH_FOR_TOKENS
+    )
     assert key == f"uniswap_v2:{token_a}:{token_b}"
+    assert direction == (token_a, token_b)
 
 
 import pytest
