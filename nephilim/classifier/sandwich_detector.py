@@ -18,7 +18,7 @@ the backrun output and frontrun input (simplified heuristic; exact profit
 requires trace-level data).
 
 The detector is intentionally strict to minimise false positives: it requires
-matching method selectors and the same target contract address.
+a decoded canonical DEX pair key. Router address alone is never treated as a pair.
 """
 
 from __future__ import annotations
@@ -48,13 +48,13 @@ def _is_swap(tx: TxRecord) -> bool:
 
 def _pair_key(tx: TxRecord) -> Optional[str]:
     """
-    Derive a canonical token-pair key for grouping.
-    Uses the target contract address (pool/router) as a proxy.
-    In production, this would decode the ABI to extract actual token0/token1.
+    Return a decoded canonical token-pair key.
+
+    Router address is intentionally not used as a fallback: grouping unrelated
+    swaps by a shared router creates high-confidence-looking false positives.
+    Unsupported calldata therefore fails closed.
     """
-    if tx.to_address:
-        return tx.to_address.lower()
-    return None
+    return tx.dex_pair_key
 
 
 SandwichResult = Dict[str, Any]
@@ -76,7 +76,7 @@ class SandwichDetector:
         - ``attacker``: from_address of the sandwicher
         - ``victim``: from_address of the victim
         - ``tx_hashes``: [frontrun_hash, victim_hash, backrun_hash]
-        - ``pair``: target contract address
+        - ``pair``: decoded canonical DEX pair key
         - ``extracted_value_eth``: estimated extracted ETH
         - ``frontrun_position``: block index of frontrun
         - ``victim_position``: block index of victim
@@ -163,6 +163,8 @@ class SandwichDetector:
                             "victim_position": victim.position_in_block,
                             "backrun_position": back.position_in_block,
                             "extracted_value_eth": extracted,
+                            "extracted_value_is_estimate": True,
+                            "estimate_method": "victim_value_fraction_minus_gas",
                             "frontrun_gas_price_gwei": front.gas_price_wei / 1e9,
                             "victim_gas_price_gwei": victim.gas_price_wei / 1e9,
                             "backrun_gas_price_gwei": back.gas_price_wei / 1e9,
