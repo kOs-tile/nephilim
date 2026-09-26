@@ -18,7 +18,9 @@ the backrun output and frontrun input (simplified heuristic; exact profit
 requires trace-level data).
 
 The detector is intentionally strict to minimise false positives: it requires
-a decoded canonical DEX pair key. Router address alone is never treated as a pair.
+a decoded canonical DEX pair key plus token direction evidence. The frontrun and
+victim must share a direction and the backrun must exactly reverse it. Router
+address alone is never treated as a pair.
 """
 
 from __future__ import annotations
@@ -55,6 +57,31 @@ def _pair_key(tx: TxRecord) -> Optional[str]:
     Unsupported calldata therefore fails closed.
     """
     return tx.dex_pair_key
+
+
+def _has_sandwich_direction(
+    front: TxRecord,
+    victim: TxRecord,
+    back: TxRecord,
+) -> bool:
+    """Require front/victim same direction and backrun exact reverse direction."""
+    fields = (
+        front.dex_token_in,
+        front.dex_token_out,
+        victim.dex_token_in,
+        victim.dex_token_out,
+        back.dex_token_in,
+        back.dex_token_out,
+    )
+    if any(value is None for value in fields):
+        return False
+
+    return (
+        front.dex_token_in == victim.dex_token_in
+        and front.dex_token_out == victim.dex_token_out
+        and back.dex_token_in == front.dex_token_out
+        and back.dex_token_out == front.dex_token_in
+    )
 
 
 SandwichResult = Dict[str, Any]
@@ -141,6 +168,12 @@ class SandwichDetector:
                     if back.gas_price_wei < victim.gas_price_wei * self._MIN_GAS_RATIO:
                         continue
 
+                    # A genuine sandwich requires directional evidence:
+                    # front and victim move the same way through the pair,
+                    # while the backrun reverses the attacker's frontrun.
+                    if not _has_sandwich_direction(front, victim, back):
+                        continue
+
                     # Confirm they span <= MAX_BLOCK_SPAN positions overall
                     span = back.position_in_block - front.position_in_block
                     if span > self._MAX_BLOCK_SPAN:
@@ -165,6 +198,28 @@ class SandwichDetector:
                             "extracted_value_eth": extracted,
                             "extracted_value_is_estimate": True,
                             "estimate_method": "victim_value_fraction_minus_gas",
+                            "evidence": {
+                                "pair_decoded": True,
+                                "direction_verified": True,
+                                "front_direction": [
+                                    front.dex_token_in,
+                                    front.dex_token_out,
+                                ],
+                                "victim_direction": [
+                                    victim.dex_token_in,
+                                    victim.dex_token_out,
+                                ],
+                                "back_direction": [
+                                    back.dex_token_in,
+                                    back.dex_token_out,
+                                ],
+                                "gas_ratio_front_vs_victim": round(
+                                    front.gas_price_wei / victim.gas_price_wei, 6
+                                ) if victim.gas_price_wei else None,
+                                "gas_ratio_back_vs_victim": round(
+                                    back.gas_price_wei / victim.gas_price_wei, 6
+                                ) if victim.gas_price_wei else None,
+                            },
                             "frontrun_gas_price_gwei": front.gas_price_wei / 1e9,
                             "victim_gas_price_gwei": victim.gas_price_wei / 1e9,
                             "backrun_gas_price_gwei": back.gas_price_wei / 1e9,
