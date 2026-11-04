@@ -14,6 +14,8 @@ GET  /graphql         — GraphiQL interactive IDE (development)
 
 from __future__ import annotations
 
+import os
+
 import time
 from typing import Any, Dict
 
@@ -58,10 +60,13 @@ def create_app(
     )
 
     # CORS — allow all origins for an open portfolio project
+    # Public demo origins remain readable without credentialed cross-origin access.
+    # For cookie-based browser sessions set KAVI_CORS_ORIGINS to exact trusted origins.
+    cors_allowed = [origin.strip() for origin in os.getenv("KAVI_CORS_ORIGINS", "").split(",") if origin.strip() and origin.strip() != "*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=cors_allowed or ["*"],
+        allow_credentials=bool(cors_allowed),
         allow_methods=["*"],
         allow_headers=["*"],
     )
